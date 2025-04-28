@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,6 +7,8 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:l3_flutter_selise_blocksconstruct/features/common/presentation/providers/form_provider.dart';
 import 'package:l3_flutter_selise_blocksconstruct/features/dashboard/presentation/widgets/send_web_socket_message_button_widget.dart';
 import 'package:reactive_forms/reactive_forms.dart';
+import 'package:web_socket_channel/status.dart' as status;
+import 'package:flutter_markdown/flutter_markdown.dart';
 
 class DashboardScreenWebSocket extends ConsumerStatefulWidget {
   const DashboardScreenWebSocket({super.key});
@@ -18,7 +21,14 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
   final List<ChatMessage> _messages = [];
   final ScrollController _scrollController = ScrollController();
 
-  final WebSocketChannel channel = IOWebSocketChannel.connect(Uri.parse(dotenv.get('TEST_WS_URL')));
+  // final WebSocketChannel channel = IOWebSocketChannel.connect(Uri.parse(dotenv.get('TEST_WS_URL')));
+
+  final WebSocketChannel channel = IOWebSocketChannel.connect(
+    Uri.parse(dotenv.get('SELISE_CLOUD_WS_CHAT_URL')),
+    headers: {
+      'Sec-WebSocket-Protocol': dotenv.get('SELISE_CLOUD_AUTH_KEY'),
+    },
+  );
   String chatResponse = '';
 
   final chatFormGroup = FormGroup({
@@ -31,9 +41,15 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
   void initState() {
     super.initState();
 
+    initChannel();
+
     Future.microtask(() {
       ref.read(formProvider.notifier).setFormGroup(chatFormGroup);
     });
+  }
+
+  void initChannel() async {
+    await channel.ready;
   }
 
   void _sendMessage() {
@@ -52,25 +68,22 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
       chatFormGroup.control('messageController').value = '';
     });
 
-    // var message = {
-    //   "question": ref.watch(formProvider).formValues['messageController'].toString().trim(),
-    //   "conversation": [],
-    //   "file_ids": [],
-    //   "filter_key_value_pair": [
-    //     {"key": "topic_id", "value": "b37267f6-ffc6-4def-a884-7e3c7af49f25"},
-    //     {"key": "OrganizationId", "value": "1ece8ffd-551b-4fd2-83eb-0eb64f71e8c9"}
-    //   ],
-    //   "model_name": "GPT-4o-mini",
-    //   "is_regenerate": false,
-    //   "conversation_id": "c469d845-54ec-4fb1-9a50-c84dbd4a006b"
-    // };
+    var message = {
+      "question": ref.watch(formProvider).formValues['messageController'].toString().trim(),
+      "conversation": [],
+      "file_ids": [],
+      "filter_key_value_pair": [
+        {"key": "topic_id", "value": "b37267f6-ffc6-4def-a884-7e3c7af49f25"},
+        {"key": "OrganizationId", "value": "1ece8ffd-551b-4fd2-83eb-0eb64f71e8c9"}
+      ],
+      "model_name": "GPT-4o-mini",
+      "is_regenerate": false,
+      "conversation_id": "c469d845-54ec-4fb1-9a50-c84dbd4a006b"
+    };
 
-    String message = ref.watch(formProvider).formValues['messageController'].toString().trim();
+    channel.sink.add(jsonEncode(message));
 
-    channel.sink.add(message);
-    // ref.read(dashboardWebSocketScreenProvider.notifier).sendWebSocketMessage(message);
-
-    Future.delayed(const Duration(seconds: 2), () {
+    Future.delayed(const Duration(seconds: 5), () {
       setState(() {
         _messages.add(
           ChatMessage(
@@ -107,7 +120,7 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
                 : StreamBuilder(
                     stream: channel.stream,
                     builder: (context, snapshot) {
-                      if (snapshot.hasData) {
+                      if (snapshot.hasData && snapshot.data.toString() != 'end_of_stream') {
                         chatResponse = snapshot.data.toString();
                       }
 
@@ -202,7 +215,7 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
   @override
   void dispose() {
     chatFormGroup.dispose();
-    channel.sink.close();
+    channel.sink.close(status.goingAway);
     _scrollController.dispose();
     super.dispose();
   }
@@ -238,9 +251,32 @@ class ChatMessage extends StatelessWidget {
                 color: isUser ? Colors.blue[700] : const Color(0xFF444654),
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: Text(
-                text,
-                style: const TextStyle(color: Colors.white, fontSize: 16),
+              // child: Text(
+              //   text,
+              //   style: const TextStyle(color: Colors.white, fontSize: 16),
+              // ),
+              child: MarkdownBody(
+                data: text,
+                styleSheet: MarkdownStyleSheet(
+                  p: const TextStyle(color: Colors.white, fontSize: 16),
+                  h1: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                  h2: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                  h3: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                  em: const TextStyle(color: Colors.white, fontStyle: FontStyle.italic),
+                  strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  code: TextStyle(
+                    color: Colors.white,
+                    backgroundColor: Colors.grey[800],
+                    fontFamily: 'monospace',
+                  ),
+                  codeblockDecoration: BoxDecoration(
+                    color: Colors.grey[850],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  blockquote: const TextStyle(color: Colors.grey),
+                  listBullet: const TextStyle(color: Colors.white),
+                ),
+                softLineBreak: true,
               ),
             ),
           ),

@@ -31,7 +31,7 @@ class SendWebSocketMessageButton extends ConsumerWidget {
           final message = ref.watch(formProvider).formValues['messageController'];
 
           if (message.toString().trim().isNotEmpty) {
-            channel.sink.add(message.toString().trim());
+            // channel.sink.add(message.toString().trim());
             // message.clear();
           }
           // final result = await ref.read(formProvider.notifier).submitForm<String>(() async {
