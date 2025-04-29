@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:l3_flutter_selise_blocksconstruct/features/common/presentation/providers/form_provider.dart';
-import 'package:l3_flutter_selise_blocksconstruct/features/dashboard/presentation/widgets/send_web_socket_message_button_widget.dart';
 import 'package:reactive_forms/reactive_forms.dart';
 import 'package:web_socket_channel/status.dart' as status;
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -20,15 +19,17 @@ class DashboardScreenWebSocket extends ConsumerStatefulWidget {
 class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSocket> {
   final List<ChatMessage> _messages = [];
   final ScrollController _scrollController = ScrollController();
-
-  // final WebSocketChannel channel = IOWebSocketChannel.connect(Uri.parse(dotenv.get('TEST_WS_URL')));
-
   final WebSocketChannel channel = IOWebSocketChannel.connect(
     Uri.parse(dotenv.get('SELISE_CLOUD_WS_CHAT_URL')),
     headers: {
       'Sec-WebSocket-Protocol': dotenv.get('SELISE_CLOUD_AUTH_KEY'),
     },
   );
+
+  bool _isConnected = false;
+  bool _isStreaming = false;
+  String _currentStreamingResponse = "";
+
   String chatResponse = '';
 
   final chatFormGroup = FormGroup({
@@ -41,15 +42,63 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
   void initState() {
     super.initState();
 
-    initChannel();
+    _connectWebSocket();
 
     Future.microtask(() {
       ref.read(formProvider.notifier).setFormGroup(chatFormGroup);
     });
   }
 
-  void initChannel() async {
-    await channel.ready;
+  void _connectWebSocket() {
+    try {
+      channel!.stream.listen(_handleWebSocketMessage, onDone: _onWebSocketDone, onError: _onWebSocketError);
+      setState(() {
+        _isConnected = true;
+      });
+    } catch (e) {
+      print('Failed to connect to WebSocket: $e');
+      setState(() {
+        _isConnected = false;
+      });
+    }
+  }
+
+  void _handleWebSocketMessage(dynamic message) {
+    final data = message?.toString() ?? "";
+
+    if (data == 'end_of_stream') {
+      setState(() {
+        _isStreaming = false;
+        _messages.add(
+          ChatMessage(
+            text: _currentStreamingResponse,
+            isUser: false,
+          ),
+        );
+        _currentStreamingResponse = "";
+      });
+      _scrollToBottom();
+    } else if (data != "" && data != "\"" && data.contains('{"data"') == false) {
+      setState(() {
+        _currentStreamingResponse = data;
+        _isStreaming = true;
+      });
+      _scrollToBottom();
+    }
+  }
+
+  void _onWebSocketDone() {
+    setState(() {
+      _isConnected = false;
+    });
+    print('WebSocket connection closed');
+  }
+
+  void _onWebSocketError(error) {
+    setState(() {
+      _isConnected = false;
+    });
+    print('WebSocket error: $error');
   }
 
   void _sendMessage() {
@@ -57,14 +106,15 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
       return;
     }
 
+    final userMessage = chatFormGroup.control('messageController').value.toString().trim();
+
     setState(() {
       _messages.add(
         ChatMessage(
-          text: ref.watch(formProvider).formValues['messageController'].toString().trim(),
+          text: userMessage,
           isUser: true,
         ),
       );
-      // clear messageController value
       chatFormGroup.control('messageController').value = '';
     });
 
@@ -82,18 +132,6 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
     };
 
     channel.sink.add(jsonEncode(message));
-
-    Future.delayed(const Duration(seconds: 5), () {
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            text: chatResponse,
-            isUser: false,
-          ),
-        );
-      });
-      _scrollToBottom();
-    });
   }
 
   void _scrollToBottom() {
@@ -115,24 +153,20 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
         children: [
           // Chat history
           Expanded(
-            child: _messages.isEmpty
+            child: _messages.isEmpty && _currentStreamingResponse.isEmpty
                 ? _buildWelcomeScreen()
-                : StreamBuilder(
-                    stream: channel.stream,
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData && snapshot.data.toString() != 'end_of_stream') {
-                        chatResponse = snapshot.data.toString();
-                      }
-
-                      return ListView.builder(
-                        controller: _scrollController,
-                        padding: const EdgeInsets.all(16),
-                        itemCount: _messages.length,
-                        itemBuilder: (context, index) {
-                          return _messages[index];
-                        },
-                      );
-                    },
+                : ListView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      ..._messages,
+                      if (_isStreaming)
+                        ChatMessage(
+                          text: _currentStreamingResponse,
+                          isUser: false,
+                          isStreaming: true,
+                        ),
+                    ],
                   ),
           ),
           // Message input area
@@ -147,7 +181,7 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
                     child: ReactiveTextField(
                       formControlName: 'messageController',
                       decoration: InputDecoration(
-                        hintText: 'Ask anything',
+                        hintText: _isConnected ? 'Message ChatGPT...' : 'Connecting...',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(20.0),
                           borderSide: BorderSide.none,
@@ -158,16 +192,27 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
                       ),
                       style: const TextStyle(color: Colors.white),
                       maxLines: null,
+                      // enabled: _isConnected,
                       textInputAction: TextInputAction.send,
-                      // onSubmitted: (_) => _sendMessage(),
+                      onSubmitted: (_) => _isConnected ? _sendMessage() : null,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  SendWebSocketMessageButton(
-                    channel: channel!,
-                    onSendMessage: () {
-                      _sendMessage();
-                    },
+                  CircleAvatar(
+                    backgroundColor: _isConnected ? Colors.green[700] : Colors.grey,
+                    child: IconButton(
+                      icon: _isStreaming
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(Icons.send, color: Colors.white),
+                      onPressed: _isConnected && !_isStreaming ? _sendMessage : null,
+                    ),
                   ),
                 ],
               ),
@@ -224,12 +269,14 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
 class ChatMessage extends StatelessWidget {
   final String text;
   final bool isUser;
+  final bool isStreaming;
 
   const ChatMessage({
-    super.key,
+    Key? key,
     required this.text,
     required this.isUser,
-  });
+    this.isStreaming = false,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -251,32 +298,67 @@ class ChatMessage extends StatelessWidget {
                 color: isUser ? Colors.blue[700] : const Color(0xFF444654),
                 borderRadius: BorderRadius.circular(18),
               ),
-              // child: Text(
-              //   text,
-              //   style: const TextStyle(color: Colors.white, fontSize: 16),
-              // ),
-              child: MarkdownBody(
-                data: text,
-                styleSheet: MarkdownStyleSheet(
-                  p: const TextStyle(color: Colors.white, fontSize: 16),
-                  h1: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-                  h2: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
-                  h3: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                  em: const TextStyle(color: Colors.white, fontStyle: FontStyle.italic),
-                  strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                  code: TextStyle(
-                    color: Colors.white,
-                    backgroundColor: Colors.grey[800],
-                    fontFamily: 'monospace',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  MarkdownBody(
+                    data: text,
+                    styleSheet: MarkdownStyleSheet(
+                      p: const TextStyle(color: Colors.white, fontSize: 16),
+                      h1: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                      h2: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold),
+                      h3: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      em: const TextStyle(color: Colors.white, fontStyle: FontStyle.italic),
+                      strong: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      code: TextStyle(
+                        color: Colors.white,
+                        backgroundColor: Colors.grey[800],
+                        fontFamily: 'monospace',
+                      ),
+                      codeblockDecoration: BoxDecoration(
+                        color: Colors.grey[850],
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      blockquote: const TextStyle(color: Colors.grey),
+                      listBullet: const TextStyle(color: Colors.white),
+                    ),
+                    softLineBreak: true,
                   ),
-                  codeblockDecoration: BoxDecoration(
-                    color: Colors.grey[850],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  blockquote: const TextStyle(color: Colors.grey),
-                  listBullet: const TextStyle(color: Colors.white),
-                ),
-                softLineBreak: true,
+                  if (isStreaming && !isUser)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8.0),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: Colors.green,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
               ),
             ),
           ),
