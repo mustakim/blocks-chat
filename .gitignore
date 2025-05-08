@@ -54,4 +54,5 @@ app.*.map.json
 
 
 # environment file
-environments/*
+environments/.env.stage
+environments/.env.prod
