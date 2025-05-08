@@ -1,13 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_gen/gen_l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
-import 'package:l3_flutter_selise_blocksconstruct/features/auth/presentation/providers/logout_provider.dart';
-import 'package:l3_flutter_selise_blocksconstruct/features/common/presentation/providers/profile_provider.dart';
-import 'package:l3_flutter_selise_blocksconstruct/features/profile/domain/repos/navigation_item_model.dart';
-import 'package:l3_flutter_selise_blocksconstruct/routing/app_router.dart';
-import 'package:l3_flutter_selise_blocksconstruct/routing/app_routes.dart';
-import 'package:l3_flutter_selise_blocksconstruct/theme/app_colors.dart';
+import 'package:l3_flutter_selise_blocksconstruct/core/auth/domain/utils/utils.dart';
+import 'package:l3_flutter_selise_blocksconstruct/features/common/domain/models/conversation_mock_data.dart';
 import 'package:l3_flutter_selise_blocksconstruct/theme/theme_provider.dart';
 
 class AppDrawer extends ConsumerWidget {
@@ -21,57 +15,89 @@ class AppDrawer extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final themeNotifier = ref.read(themeProvider.notifier);
     final themeMode = ref.watch(themeProvider);
-    final profileDetails = ref.watch(profileProvider).profileData?.data;
-    final logoutState = ref.watch(logoutProvider);
-    final logoutNotifier = ref.read(logoutProvider.notifier);
 
-    List<NavigationItemModel> navigationItems = _getChatHistory(context, themeMode);
+    final conversations = Utils.groupConversations(conversationMockData);
+
     return Container(
-      padding: EdgeInsets.symmetric(vertical: 46, horizontal: 16),
+      padding: const EdgeInsets.symmetric(vertical: 48),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            alignment: Alignment.centerRight,
-            child: IconButton(
-                onPressed: () {
-                  _scaffoldKey?.currentState?.closeDrawer();
-                },
-                icon: Icon(
-                  Icons.close,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer,
-                  size: 24,
-                )),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'EagleGPT',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Container(
+                  alignment: Alignment.centerRight,
+                  child: IconButton(
+                    onPressed: () {
+                      _scaffoldKey?.currentState?.closeDrawer();
+                    },
+                    icon: Icon(
+                      Icons.close,
+                      color: Theme.of(context).colorScheme.onSecondaryContainer,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
+          const SizedBox(height: 16),
           Expanded(
             child: ListView.builder(
-              physics: const NeverScrollableScrollPhysics(),
               padding: EdgeInsets.zero,
-              itemCount: navigationItems.length,
+              itemCount: conversations.length,
               itemBuilder: (BuildContext context, int index) {
                 return ListTile(
                   minTileHeight: _minTileHeight,
-                  title: Text(
-                    navigationItems[index].title,
-                    style: Theme.of(context).textTheme.titleSmall,
+                  title: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Text(
+                      conversations[index]['label'],
+                      style: const TextStyle(
+                        color: Color(0xFF959595),
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                  onTap: _getOnTap(context, index, logoutNotifier, logoutState, themeNotifier, themeMode),
-                  trailing: Icon(
-                    navigationItems[index].trailingIcon,
-                    color: Theme.of(context).colorScheme.onSecondaryContainer,
-                    size: 16,
-                  ),
-                  shape: navigationItems[index].hasDivider
-                      ? Border(
-                          top: BorderSide(
-                            color: AppColors.neutral90,
-                            width: 1,
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 2),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (var i = 0; i < conversations[index]['items']?.length; i++)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: InkWell(
+                            onTap: () {},
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: SizedBox(
+                                width: MediaQuery.of(context).size.width,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                                  child: Text(
+                                    conversations[index]['items']?[i]['ConversationTitle'] ?? "",
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w100,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
                           ),
-                          bottom: BorderSide(
-                            color: AppColors.neutral90,
-                            width: 1,
-                          ))
-                      : null,
+                        )
+                    ],
+                  ),
                 );
               },
             ),
@@ -79,69 +105,5 @@ class AppDrawer extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  List<NavigationItemModel> _getChatHistory(
-    BuildContext context,
-    ThemeMode themeMode,
-  ) {
-    final localizationsContext = AppLocalizations.of(context)!;
-    final navigationItems = [
-      NavigationItemModel(
-        title: localizationsContext.chats,
-        // trailingIcon: Icons.keyboard_arrow_right,
-        type: NavigationItemType.route,
-        path: AppRoutes.profile,
-      ),
-      // NavigationItemModel(
-      //   title: localizationsContext.about,
-      //   trailingIcon: Icons.keyboard_arrow_right,
-      //   hasDivider: true,
-      // ),
-      // NavigationItemModel(
-      //   title: localizationsContext.privacyPolicy,
-      //   trailingIcon: Icons.keyboard_arrow_right,
-      // ),
-      // NavigationItemModel(
-      //   title: localizationsContext.theme,
-      //   trailingIcon: themeMode == ThemeMode.dark ? Icons.light_mode_outlined : Icons.dark_mode_outlined,
-      //   hasDivider: true,
-      //   type: NavigationItemType.theme,
-      // ),
-      // NavigationItemModel(
-      //   title: localizationsContext.logout,
-      //   trailingIcon: Icons.logout,
-      //   type: NavigationItemType.logout,
-      // ),
-    ];
-    return navigationItems;
-  }
-
-  GestureTapCallback? _getOnTap(BuildContext context, int index, LogoutNotifier logoutNotifier, LogoutState logoutState,
-      ThemeNotifier themeNotifier, ThemeMode themeMode) {
-    final localizationsContext = AppLocalizations.of(context)!;
-    final navigationItems = _getChatHistory(context, themeMode);
-    switch (navigationItems[index].type) {
-      case NavigationItemType.theme:
-        return () {
-          themeNotifier.toggleTheme();
-        };
-      case NavigationItemType.route:
-        return () {
-          _scaffoldKey?.currentState?.closeDrawer();
-          context.replaceNamed(
-            navigationItems[index].path!.name,
-            queryParameters: {'previousRoute': AppRouter.instance.navigation.currentPath.path},
-          );
-        };
-      case NavigationItemType.logout:
-        return () async {
-          _scaffoldKey?.currentState?.closeDrawer();
-          await logoutNotifier.logout();
-          AppRouter.instance.navigation.goNamed(AppRoutes.login.name);
-        };
-      default:
-        return null;
-    }
   }
 }

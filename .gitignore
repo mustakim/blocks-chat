@@ -48,10 +48,10 @@ app.*.map.json
 /mason.yaml
 /mason-lock.json
 
-# FVM Version Cache
-.fvm
 .cxx
-
 
 # environment file
 environments/*
+
+# FVM Version Cache
+.fvm/

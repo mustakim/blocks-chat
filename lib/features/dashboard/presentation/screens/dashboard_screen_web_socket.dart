@@ -42,7 +42,7 @@ class _DashboardScreenWebSocketState extends ConsumerState<DashboardScreenWebSoc
   void initState() {
     super.initState();
 
-    _connectWebSocket();
+    // _connectWebSocket();
 
     Future.microtask(() {
       ref.read(formProvider.notifier).setFormGroup(chatFormGroup);

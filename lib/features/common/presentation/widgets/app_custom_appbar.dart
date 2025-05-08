@@ -104,7 +104,7 @@ class _AppCustomAppBarState extends State<AppCustomAppBar> {
                 children: [
                   Icon(Icons.chat_bubble_outline, size: 20, color: widget.foregroundColor ?? Colors.white),
                   SizedBox(width: 8),
-                  Text('ChatGPT',
+                  Text('EagleGPT',
                       style: TextStyle(fontWeight: FontWeight.w700, color: widget.foregroundColor ?? Colors.white)),
                 ],
               ),
